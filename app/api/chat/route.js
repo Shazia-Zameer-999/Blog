@@ -8,53 +8,57 @@
 //   return Response.json({ reply: "I'm not sure about that, could you rephrase?" });
 // }
 // app/api/chat/route.js
-import { NextResponse } from 'next/server'
+import { NextResponse } from "next/server";
 
-const HF_TOKEN = process.env.HF_TOKEN
-const HF_MODEL = process.env.HF_MODEL || 'microsoft/DialoGPT-medium' // choose model
+const HF_TOKEN = process.env.HF_TOKEN;
+const HF_MODEL = process.env.HF_MODEL || "HuggingFaceH4/zephyr-7b-beta";
 
 export async function POST(req) {
   try {
-    const { message, history = [] } = await req.json()
+    const { message } = await req.json();
+
     if (!message || !message.trim()) {
-      return NextResponse.json({ error: 'No message provided' }, { status: 400 })
+      return NextResponse.json({ error: "Empty message." }, { status: 400 });
     }
 
-    // Build the input. Many HF conversational models accept simple "inputs" text.
-    // For models that require a specific format, adapt this payload accordingly.
-    const payload = { inputs: message }
-
-    const resp = await fetch(`https://api-inference.huggingface.co/models/${HF_MODEL}`, {
-      method: 'POST',
+    const response = await fetch(`https://api-inference.huggingface.co/models/${HF_MODEL}`, {
+      method: "POST",
       headers: {
         Authorization: `Bearer ${HF_TOKEN}`,
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify(payload),
-    })
+      body: JSON.stringify({
+        inputs: `User: ${message}\nAssistant:`,
+        parameters: {
+          max_new_tokens: 200,
+          temperature: 0.7,
+          return_full_text: false,
+        },
+      }),
+    });
 
-    const data = await resp.json()
+    const data = await response.json();
 
-    // Different models return different shapes.
-    // Common shape for generation: { generated_text: "..." } or an array of text generations.
-    let reply = ''
-    if (typeof data === 'string') {
-      // sometimes HF returns plain string
-      reply = data
-    } else if (Array.isArray(data) && data[0]?.generated_text) {
-      reply = data[0].generated_text
-    } else if (data?.generated_text) {
-      reply = data.generated_text
-    } else if (data?.error) {
-      return NextResponse.json({ error: data.error }, { status: 500 })
+    // 👇 Debugging: log what Hugging Face actually returns
+    console.log("HF response:", data);
+
+    // Hugging Face may return an array with `generated_text`
+    let reply = "";
+
+    if (Array.isArray(data) && data[0]?.generated_text) {
+      reply = data[0].generated_text.trim();
+    } else if (typeof data === "object" && data.generated_text) {
+      reply = data.generated_text.trim();
+    } else if (data.error) {
+      console.error("Hugging Face error:", data.error);
+      reply = "⚠️ Model error: " + data.error;
     } else {
-      // fallback: try to extract any text fields
-      reply = JSON.stringify(data).slice(0, 1000)
+      reply = "Sorry, I didn’t get that.";
     }
 
-    return NextResponse.json({ reply })
+    return NextResponse.json({ reply });
   } catch (err) {
-    console.error('Chat API error:', err)
-    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+    console.error("Chat API error:", err);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
