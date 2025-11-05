@@ -8,51 +8,62 @@
 //   return Response.json({ reply: "I'm not sure about that, could you rephrase?" });
 // }
 // app/api/chat/route.js
-import { NextResponse } from "next/server";
+// app/api/chat/route.js
+// src/app/api/chat/route.js
 
-const HF_TOKEN = process.env.HF_TOKEN;
-const HF_MODEL = process.env.HF_MODEL || "HuggingFaceH4/zephyr-7b-beta";
+// src/app/api/chat/route.js
+
+// src/app/api/chat/route.js
+
+// src/app/api/chat/route.js
+
+// src/app/api/chat/route.js
 
 export async function POST(req) {
   try {
     const { message } = await req.json();
-    if (!message?.trim()) {
-      return NextResponse.json({ reply: "Please type a message first." });
-    }
 
-    const res = await fetch("https://router.huggingface.co/hf-inference", {
+    console.log("🟦 Sending message to HF:", message);
+
+    // ✅ FIX: Use the OpenAI-compatible v1 router
+    const HF_API_URL = "https://router.huggingface.co/v1/chat/completions";
+
+    const res = await fetch(HF_API_URL, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${HF_TOKEN}`,
+        Authorization: `Bearer ${process.env.HF_TOKEN}`,
         "Content-Type": "application/json",
       },
+      // ✅ FIX: Use the OpenAI-compatible body
       body: JSON.stringify({
-        model: HF_MODEL,
-        inputs: `User: ${message}\nAssistant:`,
-        parameters: {
-          max_new_tokens: 150,
-          temperature: 0.7,
-          return_full_text: false,
-        },
+        model: `${process.env.HF_MODEL}:hf-inference`, // This syntax is key!
+        messages: [{ role: "user", content: message }],
+        max_tokens: 500,
+        stream: false,
       }),
     });
 
+    console.log("🟪 HF status:", res.status);
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error("❌ HF API Error:", errorText);
+      return Response.json(
+        { reply: `⚠️ Model error: ${errorText}` },
+        { status: res.status }
+      );
+    }
+
     const data = await res.json();
-    console.log("HF RAW:", JSON.stringify(data, null, 2));
+    console.log("🟨 HF raw response:", data);
 
-    // --- Try every known shape safely ---
-    const reply =
-      data?.[0]?.generated_text ||
-      data?.generated_text ||
-      data?.results?.[0]?.generated_text ||
-      data?.output_text ||
-      data?.message ||
-      "Sorry, I didn’t get that.";
+    // ✅ FIX: Parse the OpenAI-compatible response
+    const reply = data.choices?.[0]?.message?.content || "Sorry, I didn't get that.";
+    return Response.json({ reply });
 
-    return NextResponse.json({ reply: reply.trim() });
   } catch (err) {
-    console.error("Chat API error:", err);
-    return NextResponse.json(
+    console.error("❌ Chat API error:", err);
+    return Response.json(
       { reply: "⚠️ Something went wrong. Try again later." },
       { status: 500 }
     );
